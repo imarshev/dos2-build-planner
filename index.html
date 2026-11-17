@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0c0a11">
+<title data-i18n="app.page_title">Планировщик билда — Divinity: Original Sin 2 (DE)</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="loading" class="loading" data-i18n="loading.text">Загрузка…</div>
+<header class="top">
+  <div class="brand">
+    <span class="sigil">✦</span>
+    <div>
+      <h1 id="appTitle" data-i18n="app.title">Планировщик билда</h1>
+      <small id="appSubtitle" data-i18n="app.subtitle">Divinity: Original Sin 2 · Definitive Edition</small>
+    </div>
+  </div>
+  <div class="top-right">
+    <!-- триггеры выезжающей панели (дизайн 2026-11-07-drawer-triggers-placement): две
+         скреплённые кнопки вместо вертикальных язычков на правом краю; id прежние —
+         пробы/shoot/interactions не переименовывать; скрыты при открытом drawer.
+         r4-R3 (spec 2026-11-11 §11, паттерны §17): «План» — тем же вариантом .seg-btn,
+         но ВНЕ connected-группы и слева от неё (M3: кнопки вне группы не наследуют её
+         поведение; связанность выбора у пары «Предметы|Навыки» своя); отступ — flex-gap -->
+    <button id="planBtn" class="seg-btn seg-plan" type="button" aria-controls="planDrawer" aria-expanded="false"
+            title="Перенести билд в план прокачки" data-i18n="plan.open" data-i18n-attr="title:plan.open_title">План</button>
+    <div id="dbSeg" class="top-seg" role="group" data-i18n-attr="aria-label:drawer.seg_label">
+      <button id="drawerTab" class="seg-btn" type="button" aria-controls="itemsDrawer" aria-expanded="false" data-i18n="drawer.tab" data-i18n-attr="title:drawer.tab_title">⚔ Предметы</button>
+      <button id="skillsTab" class="seg-btn" type="button" aria-controls="itemsDrawer" aria-expanded="false" data-i18n="drawer.tab_skills" data-i18n-attr="title:drawer.tab_skills_title">✦ Навыки</button>
+    </div>
+    <select id="langSel" title="Язык / Language" data-i18n-attr="title:header.lang_title">
+      <option value="ru">RU</option>
+      <option value="en">EN</option>
+    </select>
+    <button id="slotsBtn" class="btn ghost" title="Слоты сохранения билдов" data-i18n="header.slots" data-i18n-attr="title:header.slots_title">Слоты</button>
+    <input type="file" id="slotFile" accept=".json" style="display:none">
+    <button id="resetBtn" class="btn ghost" title="Сбросить билд" data-i18n="header.reset" data-i18n-attr="title:header.reset_title">Сбросить</button>
+    <button id="layoutResetBtn" class="btn ghost" title="Вернуть секциям исходный порядок" data-i18n="header.layout_reset" data-i18n-attr="title:header.layout_reset_title">Сброс вида</button>
+  </div>
+</header>
+
+<!-- ======= ПАНЕЛЬ СЛОТОВ: 5 снимков билда (дизайн docs/superpowers/specs/2026-11-06-build-save-slots-design.md) ======= -->
+<div id="slotsPanel" class="slots-panel" tabindex="-1" hidden data-i18n-attr="aria-label:slots.title">
+  <div class="slots-head">
+    <span class="slots-title" data-i18n="slots.title">Слоты билдов</span>
+    <span class="muted small" data-i18n="slots.hint">до 5 · рабочий билд автосохраняется отдельно</span>
+    <button class="slots-close" data-close="1" title="Закрыть" data-i18n-attr="aria-label:slots.close" aria-label="Закрыть">✕</button>
+  </div>
+  <div id="slotsList"></div>
+</div>
+
+<main>
+  <!-- ======= ЛЕВАЯ ПАНЕЛЬ: ПЕРСОНАЖ ======= -->
+  <aside id="charPane" class="pane">
+    <div class="ccol">
+    <section class="sec" data-id="origin_race">
+      <h2 data-i18n="section.origin_race">Происхождение и раса</h2>
+      <div class="hero">
+        <div id="heroPortrait" class="hero-por-wrap"></div>
+        <div class="hero-main">
+          <div class="row2">
+            <label><span data-i18n="section.origin">Происхождение</span>
+              <select id="originSel"></select>
+            </label>
+            <label><span data-i18n="section.race">Раса</span>
+              <select id="raceSel"></select>
+            </label>
+          </div>
+          <div id="originInfo" class="muted small"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" data-id="level">
+      <h2><span data-i18n="section.level">Уровень</span> <output id="levelOut" class="lvl"></output></h2>
+      <input type="range" id="levelRange" min="1" max="22" step="1">
+      <div id="pools" class="pools"></div>
+    </section>
+
+    <section class="sec" data-id="attrs">
+      <h2><span data-i18n="section.attrs">Качества</span> <span class="pool-tag" id="attrPool"></span></h2>
+      <div id="attrNote" class="attr-note"></div>
+      <div id="attrRows"></div>
+      <!-- derived_note убран (ws11): после перехода на движковую формулу HP в секции не осталось
+           строк с ≈ (единственные — crit/dodge — в «Боевых умениях», index.html ниже). -->
+      <div id="attrDerived"></div>
+    </section>
+
+    <section class="sec" data-id="equipment">
+      <h2 data-i18n="section.equipment">Снаряжение</h2>
+      <div id="equipRows"></div>
+    </section>
+    </div>
+
+    <div class="ccol">
+    <section class="sec" data-id="skills">
+      <h2 data-i18n="section.skills">Навыки</h2>
+      <!-- #memBar — только точка монтирования: полосу .membar рисует renderSkills();
+           класс здесь давал вложенный .membar.membar — двойная рамка сверху и срезанная нижняя -->
+      <div id="memBar"></div>
+      <div id="skillRows"></div>
+      <div id="skillsPruned"></div>
+      <div class="muted small" data-i18n="section.skills_note"></div>
+    </section>
+
+    <section class="sec" data-id="civil">
+      <h2><span data-i18n="section.civil">Мирные умения</span> <span class="pool-tag" id="civilPool"></span></h2>
+      <div id="civilNote" class="civil-note"></div>
+      <div id="civilRows"></div>
+    </section>
+
+    <section class="sec" data-id="combat">
+      <h2><span data-i18n="section.combat">Боевые умения</span> <span class="pool-tag" id="combatPool"></span></h2>
+      <div id="combatNote" class="combat-note"></div>
+      <div id="combatRows"></div>
+      <div class="muted small" data-i18n="section.derived_note"></div>
+      <div id="combatDerived"></div>
+    </section>
+    </div>
+
+    <div class="ccol">
+    <section class="sec" data-id="talents">
+      <h2><span data-i18n="section.talents">Таланты</span> <span class="pool-tag" id="talentPool"></span></h2>
+      <div id="talentRows"></div>
+      <h3 class="sub" data-i18n="section.quest_talents">Квестовые таланты</h3>
+      <div id="questTalentRows" class="muted"></div>
+      <h3 class="sub" data-i18n="section.racial_talents">Расовые таланты</h3>
+      <div id="racialTalentRows" class="muted"></div>
+    </section>
+    </div>
+
+  </aside>
+</main>
+
+<!-- ======= ВЫЕЗЖАЮЩАЯ ПАНЕЛЬ: БАЗА ПРЕДМЕТОВ + ДЕТАЛИ/КУЗНИЦА (открывается по кнопке) ======= -->
+<div id="itemsDrawer" class="drawer" data-pane="items" aria-hidden="true">
+  <!-- пилюля-грабок (моб. слой ≤740px): стянуть панель вниз или тап/Enter (spec
+       2026-11-09-drawer-drag-dismiss); на desktop display:none, кнопка «Свернуть ✕» ниже -->
+  <div class="grab" id="drawerGrab" role="button" tabindex="0"
+       data-i18n-attr="aria-label:drawer.grab"></div>
+  <header class="drawer-head">
+    <span class="drawer-title"><span class="t-items" data-i18n="drawer.title">База предметов и кузница</span><span class="t-skills" data-i18n="drawer.title_skills">База навыков</span></span>
+    <span class="drawer-hint muted small" data-i18n="drawer.hint">Esc — свернуть</span>
+    <button id="drawerClose" class="btn ghost small-btn" type="button" data-i18n="drawer.close">Свернуть ✕</button>
+  </header>
+  <!-- переключатель двух списков одной панели (app.js setDrawerPane меняет data-pane) -->
+  <div id="drawerTabs" class="drawer-tabs" role="tablist">
+    <button id="dtabItems" class="dtab" type="button" role="tab" data-pane="items" aria-selected="true" data-i18n="drawer.tab">⚔ Предметы</button>
+    <button id="dtabSkills" class="dtab" type="button" role="tab" data-pane="skills" aria-selected="false" data-i18n="drawer.tab_skills">✦ Навыки</button>
+  </div>
+  <div class="drawer-body">
+  <!-- ======= ЦЕНТР: БАЗА ПРЕДМЕТОВ ======= -->
+  <section id="dbPane" class="pane">
+    <div class="toolbar">
+      <input id="searchBox" type="search" placeholder="Поиск: название, зона, навык…" spellcheck="false" data-i18n-attr="placeholder:db.search_placeholder">
+      <select id="fRarity"><option value="" data-i18n="db.rarity_all">Редкость: все</option></select>
+      <select id="fSlot"><option value="" data-i18n="db.slot_all">Слот: все</option></select>
+      <select id="fWeaponType" style="display:none"><option value="" data-i18n="db.weapon_type_all">Тип: все</option></select>
+      <select id="fArea"><option value="" data-i18n="db.area_all">Зона: все</option></select>
+      <select id="fLevel"><option value="" data-i18n="db.level_all">Уровень: все</option></select>
+      <!-- .chkrow: на десктопе display:contents (прозрачная обёртка, пиксели как раньше),
+           на телефоне — своя строка: все чекбоксы вместе с «Сброс» и счётчиком -->
+      <div class="chkrow">
+        <label class="chk"><input type="checkbox" id="fSkill"><span data-i18n="db.filter_skill"> даёт навык</span></label>
+        <label class="chk"><input type="checkbox" id="fCoords"><span data-i18n="db.filter_coords"> с координатами</span></label>
+        <label class="chk"><input type="checkbox" id="fDe"><span data-i18n="db.filter_de"> только DE</span></label>
+        <label class="chk"><input type="checkbox" id="fScale"><span data-i18n="db.filter_scale"> рост по уровню</span></label>
+        <button id="fReset" class="btn ghost small-btn" data-i18n="db.filter_reset">Сброс</button>
+        <span id="dbCount" class="count"></span>
+      </div>
+    </div>
+    <div id="dbTable" role="table">
+      <div id="itemHead" class="item-head" role="row"></div>
+      <div id="itemList" class="item-list" role="rowgroup"></div>
+    </div>
+  </section>
+
+  <!-- ======= ЦЕНТР: БАЗА НАВЫКОВ (показана при data-pane="skills") ======= -->
+  <section id="skillsPane" class="pane">
+    <div class="toolbar">
+      <input id="skSearch" type="search" placeholder="Поиск: название, школа, источник…" spellcheck="false" data-i18n-attr="placeholder:sk.search_placeholder">
+      <select id="skSchool"><option value="" data-i18n="sk.school_all">Школа: все</option></select>
+      <select id="skTier"><option value="" data-i18n="sk.tier_all">Тир: все</option></select>
+      <select id="skMem"><option value="" data-i18n="sk.mem_all">Память: все</option></select>
+      <select id="skSrc"><option value="" data-i18n="sk.src_all">Источник: все</option></select>
+      <div class="chkrow">
+        <label class="chk" data-i18n-attr="title:sk.avail_tip"><input type="checkbox" id="skAvail"><span data-i18n="sk.avail">Доступные сейчас</span></label>
+        <button id="skReset" class="btn ghost small-btn" data-i18n="db.filter_reset">Сброс</button>
+        <span id="skCount" class="count"></span>
+      </div>
+    </div>
+    <div id="skillTable" role="table">
+      <div id="skillHead" class="item-head" role="row"></div>
+      <div id="skillList" class="item-list" role="rowgroup"></div>
+    </div>
+  </section>
+
+  <!-- ======= ПРАВАЯ ПАНЕЛЬ: ДЕТАЛИ + ГЕНЕРАТОР ======= -->
+  <aside id="detailPane" class="pane">
+    <!-- Кузница: в разметке свёрнута; initForge в app.js раскрывает её на десктопе
+         (>740px), на телефоне остаётся свёрнутой — разворачивается тапом по summary -->
+    <details class="sec rollgen">
+      <summary data-i18n="generator.title">Кузница редкости</summary>
+      <div class="muted small" data-i18n="generator.note">Divine / Legendary — случайные аффиксы (Divine = 5 бросков … Uncommon = 1). Генерируйте предмет по слоту и тира.</div>
+      <div class="row3">
+        <label><span data-i18n="generator.slot_label">Слот</span> <select id="gSlot"></select></label>
+        <label><span data-i18n="generator.weapon_type_label">Тип</span> <select id="gWeaponType" style="display:none"></select></label>
+        <label><span data-i18n="generator.tier_label">Тир</span> <select id="gTier"></select></label>
+        <label><span data-i18n="generator.level_label">Уровень</span> <input id="gLevel" type="number" min="1" max="22" value="18"></label>
+      </div>
+      <button id="gBtn" class="btn gold" data-i18n="generator.forge_btn">Сковать предмет</button>
+    </details>
+    <section class="sec" id="detailSec">
+      <!-- пилюля-грабок листа предмета (моб. слой ≤740px, sticky у верхней кромки):
+           стянуть лист вниз или тап/Enter (spec 2026-11-09-drawer-drag-dismiss, кнопка
+           «Свернуть ✕» убрана пользователем; на desktop грабок display:none) -->
+      <div class="grab" id="sheetGrab" role="button" tabindex="0"
+           data-i18n-attr="aria-label:sheet.grab"></div>
+      <div id="detail" class="detail"></div>
+    </section>
+  </aside>
+  </div>
+</div>
+
+<!-- ======= ПЛАН ПРОКАЧКИ: собственный drawer-слой (spec docs/superpowers/specs/2026-11-11-lvlup-plan-design.md §6) ======= -->
+<div id="planDrawer" class="drawer plan-drawer" aria-hidden="true" data-pane="plan">
+  <div class="grab" id="planGrab" role="button" tabindex="0"
+       data-i18n-attr="aria-label:drawer.grab"></div>
+  <header class="drawer-head">
+    <span class="drawer-title" data-i18n="plan.title">План прокачки</span>
+    <span class="drawer-hint muted small" data-i18n="plan.hint">Esc — свернуть</span>
+    <button id="planClose" class="btn ghost small-btn" type="button" data-i18n="drawer.close">Свернуть ✕</button>
+  </header>
+  <div class="plan-body" id="planBody"></div>
+</div>
+<!-- ======= ПОПОВЕР СЛОТОВ ПЛАНА: дитро body, сосед drawer'а (transform родителя сделался бы
+     containing block для fixed); тот же слой .slots-panel, что у слотов билда
+     (spec docs/superpowers/specs/2026-11-14-plan-slots-popup-info-gate-design.md §5.1) ======= -->
+<div id="planSlotsPop" class="slots-panel plan-slots-pop" tabindex="-1" hidden
+     data-i18n-attr="aria-label:plan.slots">
+  <div class="slots-head">
+    <span class="slots-title" data-i18n="plan.slots">Слоты плана</span>
+    <span class="muted small" data-i18n="plan.slots_hint">до 5 · рабочий план автосохраняется отдельно</span>
+    <button class="slots-close plan-slots-close" type="button" data-act="planSlotsPopClose"
+            title="Закрыть" data-i18n-attr="aria-label:slots.close" aria-label="Закрыть">✕</button>
+  </div>
+  <div id="planSlotsList"></div>
+</div>
+<div id="hoverCard" class="hover-card" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="js/data.js"></script>
+<script src="js/lib/js-yaml.min.js"></script>
+<script src="js/lib/i18next.min.js"></script>
+<script src="js/lib/Sortable.min.js"></script>
+<script src="js/damage.js"></script>
+<script src="js/i18n_data.js"></script>
+<script src="js/app/00-core.js"></script>
+<script src="js/app/10-model.js"></script>
+<script src="js/app/12-plan.js"></script>
+<script src="js/app/30-ui.js"></script>
+<script src="js/app/40-render-char.js"></script>
+<script src="js/app/50-db-items.js"></script>
+<script src="js/app/60-db-skills.js"></script>
+<script src="js/app/70-detail.js"></script>
+<script src="js/app/80-forge.js"></script>
+<script src="js/app/85-misc-ui.js"></script>
+<script src="js/app/87-plan-ui.js"></script>
+<script src="js/app/90-events.js"></script>
+<script src="js/app/95-layout.js"></script>
+<script src="js/app/97-slots-store.js"></script>
+<script src="js/app/99-boot.js"></script>
+</body>
+</html>
